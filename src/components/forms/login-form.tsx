@@ -1,4 +1,4 @@
-import { useForm, SubmitHandler } from "react-hook-form"
+import { useForm, type SubmitHandler } from "react-hook-form"
 import ErrorMsg from "../common/err-message";
 import { notifySuccess } from "../../utils/toast";
 import { NavLink } from "react-router-dom";
