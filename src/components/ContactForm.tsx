@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useContactSubmissions } from '@/hooks/useContactSubmissions';
 
 interface ContactFormData {
   name: string;
@@ -10,7 +9,6 @@ interface ContactFormData {
 }
 
 const ContactForm: React.FC = () => {
-  const { submitContact, loading, error } = useContactSubmissions();
   const [formData, setFormData] = useState<ContactFormData>({
     name: '',
     email: '',
@@ -18,21 +16,29 @@ const ContactForm: React.FC = () => {
     company: '',
     message: ''
   });
+  const [loading, setLoading] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    console.log(`Input changed: ${name} = ${value}`);
+    
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    
     // Clear validation errors when user starts typing
     if (validationErrors.length > 0) {
       setValidationErrors([]);
     }
     if (submitSuccess) {
       setSubmitSuccess(false);
+    }
+    if (error) {
+      setError(null);
     }
   };
 
@@ -57,12 +63,61 @@ const ContactForm: React.FC = () => {
     return errors.length === 0;
   };
 
+  const submitToSupabase = async (data: ContactFormData) => {
+    console.log('Submitting to Supabase with data:', data);
+    
+    const SUPABASE_URL = "https://iaptupykxulqphglbqbc.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhcHR1cHlreHVscXBoZ2xicWJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc5MzQyNTYsImV4cCI6MjA2MzUxMDI1Nn0.DGdq6_7Fv6AuuCY6Hv6YDv_kaMpv_Z7Q6absvQhHarI";
+    
+    const payload = {
+      name: data.name.trim(),
+      email: data.email.trim(),
+      phone: data.phone.trim() || null,
+      company: data.company.trim() || null,
+      message: data.message.trim(),
+      status: 'new'
+    };
+
+    console.log('API payload:', payload);
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/58b7ef72-f2f8-45ba-a505-bb747b82fa1c_contact_submissions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Response error:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('Success result:', result);
+      return { data: result, error: null };
+    } catch (err) {
+      console.error('Fetch error:', err);
+      return { data: null, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Form submitted!', formData); // Debug log
+    console.log('=== FORM SUBMIT TRIGGERED ===');
+    console.log('Form data:', formData);
     
     setSubmitSuccess(false);
     setValidationErrors([]);
+    setError(null);
 
     // Validate form
     if (!validateForm()) {
@@ -70,20 +125,17 @@ const ContactForm: React.FC = () => {
       return;
     }
 
-    console.log('Submitting to Supabase...'); // Debug log
+    console.log('Form validation passed, starting submission...');
+    setLoading(true);
 
     try {
-      const { data, error: submitError } = await submitContact({
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim() || null,
-        company: formData.company.trim() || null,
-        message: formData.message.trim()
-      });
+      const { data, error: submitError } = await submitToSupabase(formData);
 
-      console.log('Supabase response:', { data, error: submitError }); // Debug log
-
-      if (!submitError && data) {
+      if (submitError) {
+        console.error('Submission error:', submitError);
+        setError(submitError);
+      } else if (data) {
+        console.log('Submission successful:', data);
         setSubmitSuccess(true);
         setFormData({
           name: '',
@@ -92,10 +144,13 @@ const ContactForm: React.FC = () => {
           company: '',
           message: ''
         });
-        console.log('Form submitted successfully!');
       }
     } catch (err) {
-      console.error('Submit error:', err);
+      console.error('Unexpected error:', err);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+      console.log('=== FORM SUBMIT COMPLETED ===');
     }
   };
 
@@ -170,8 +225,15 @@ const ContactForm: React.FC = () => {
           disabled={loading}
           style={{ 
             opacity: loading ? 0.7 : 1,
-            cursor: loading ? 'not-allowed' : 'pointer'
+            cursor: loading ? 'not-allowed' : 'pointer',
+            backgroundColor: loading ? '#666' : '#007bff',
+            color: 'white',
+            padding: '12px 24px',
+            border: 'none',
+            borderRadius: '5px',
+            fontSize: '16px'
           }}
+          onClick={() => console.log('Button clicked!')}
         >
           {loading ? 'Sending...' : 'Send Message'}
         </button>
@@ -205,20 +267,39 @@ const ContactForm: React.FC = () => {
         </div>
       )}
 
-      {/* Debug Info (remove in production) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div style={{ 
-          marginTop: '20px', 
-          padding: '10px', 
-          backgroundColor: '#f8f9fa', 
-          border: '1px solid #dee2e6',
-          borderRadius: '5px',
-          fontSize: '12px'
-        }}>
-          <strong>Debug Info:</strong>
-          <pre>{JSON.stringify({ loading, error, submitSuccess, formData }, null, 2)}</pre>
-        </div>
-      )}
+      {/* Debug Info */}
+      <div style={{ 
+        marginTop: '20px', 
+        padding: '10px', 
+        backgroundColor: '#f8f9fa', 
+        border: '1px solid #dee2e6',
+        borderRadius: '5px',
+        fontSize: '12px'
+      }}>
+        <strong>Debug Info:</strong><br/>
+        Loading: {loading ? 'Yes' : 'No'}<br/>
+        Success: {submitSuccess ? 'Yes' : 'No'}<br/>
+        Error: {error || 'None'}<br/>
+        Form Data: {JSON.stringify(formData, null, 2)}
+      </div>
+
+      {/* Test Button */}
+      <button 
+        onClick={() => {
+          console.log('Test button clicked!');
+          alert('Test button works!');
+        }}
+        style={{
+          marginTop: '10px',
+          padding: '8px 16px',
+          backgroundColor: '#28a745',
+          color: 'white',
+          border: 'none',
+          borderRadius: '3px'
+        }}
+      >
+        Test Button
+      </button>
     </div>
   );
 };
